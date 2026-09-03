@@ -1420,9 +1420,13 @@
 
   // ---------- boletim por disciplina (distribuído x recebido) ----------
   function trabalhoPrazoAlcancado(d){
-    var pe = d.prazoEntrega;
-    if(!pe || !pe.isData || !pe.valor) return false;
-    var n = daysDiff(pe.valor);
+    // usa a data limite (prazo de entrega); se ela não estiver preenchida, cai para a data de
+    // apresentação — alguns trabalhos só têm uma das duas datas definidas
+    var iso = null;
+    if(d.prazoEntrega && d.prazoEntrega.isData && d.prazoEntrega.valor) iso = d.prazoEntrega.valor;
+    else if(d.dataApresentacao && d.dataApresentacao.isData && d.dataApresentacao.valor) iso = d.dataApresentacao.valor;
+    if(!iso) return false;
+    var n = daysDiff(iso);
     return n !== null && n <= 0;
   }
   function computeBoletim(){
