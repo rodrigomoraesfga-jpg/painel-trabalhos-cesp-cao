@@ -692,6 +692,17 @@
       return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
     });
   }
+  // escapa o texto e transforma URLs (http(s):// ou www.) em links clicáveis, que abrem em nova aba
+  function linkifyHtml(s){
+    var escaped = escapeHtml(s);
+    return escaped.replace(/((https?:\/\/|www\.)[^\s<]+)/gi, function(match){
+      var trail = "";
+      var m = match.match(/[.,;:!?)]+$/);
+      if(m){ trail = m[0]; match = match.slice(0, match.length - trail.length); }
+      var href = /^https?:\/\//i.test(match) ? match : ("https://" + match);
+      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer" style="color:var(--accent); text-decoration:underline;">' + match + '</a>' + trail;
+    });
+  }
   function discLabel(disciplinas){
     if(!disciplinas || !disciplinas.length) return "Sem disciplina";
     return disciplinas.map(nomeComProfessor).join(" + ");
@@ -1209,8 +1220,8 @@
     grid.appendChild(apresField);
     wrap.appendChild(grid);
 
-    if(d.barema && d.barema.trim()) wrap.appendChild(fieldRow("Barema", escapeHtml(d.barema).replace(/\n/g, "<br>")));
-    if(d.observacoes && d.observacoes.trim()) wrap.appendChild(fieldRow("Observações", escapeHtml(d.observacoes).replace(/\n/g, "<br>")));
+    if(d.barema && d.barema.trim()) wrap.appendChild(fieldRow("Barema", linkifyHtml(d.barema).replace(/\n/g, "<br>")));
+    if(d.observacoes && d.observacoes.trim()) wrap.appendChild(fieldRow("Observações", linkifyHtml(d.observacoes).replace(/\n/g, "<br>")));
 
     var footWrap = el("div");
     footWrap.style.cssText = "margin-top:16px; padding-top:14px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;";
