@@ -591,7 +591,7 @@
       try{ autoResolveDates(id); refreshRow(id); }
       catch(e){ console.error("falha ao ressincronizar trabalho " + id, e); }
     });
-    if(openId){ try{ refreshModalTags(); }catch(e){ console.error("falha ao atualizar modal", e); } }
+    if(openId){ try{ refreshModalTags(); refreshModalBody(); }catch(e){ console.error("falha ao atualizar modal", e); } }
     applyFiltersAndSort();
   }
 
@@ -861,7 +861,7 @@
     var dot = el("span", "row-dot", {"data-s": data.situacao || "nao_iniciado"});
     var discBtn = el("button", "row-disc-btn", {type:"button"});
     discBtn.textContent = discLabel(data.disciplinas);
-    discBtn.addEventListener("click", function(e){ e.stopPropagation(); openModal(id); });
+    discBtn.addEventListener("click", function(e){ e.stopPropagation(); openView(id); });
     tdDisc.appendChild(dot); tdDisc.appendChild(discBtn);
     row.appendChild(tdDisc);
 
@@ -885,7 +885,7 @@
     tdApres.appendChild(chipApres);
     row.appendChild(tdApres);
 
-    row.addEventListener("click", function(){ openModal(id); });
+    row.addEventListener("click", function(){ openView(id); });
 
     refs.row = row; refs.dot = dot; refs.discBtn = discBtn; refs.tdTema = tdTema; refs.tdResp = tdResp; refs.tdData = tdData; refs.chipArtigo = chipArtigo; refs.chipSlides = chipSlides; refs.chipApres = chipApres;
     cardObj.rowEl = row;
@@ -895,7 +895,7 @@
     var saveDot = el("span", "save-dot");
 
     // disciplinas (no cabeçalho do modal, não no corpo)
-    refs.discSelectApi = null; // criado ao abrir o modal (ver openModal)
+    refs.discSelectApi = null; // criado ao abrir o modal (ver renderHeaderTags)
 
     var sitRow = el("div"); sitRow.style.cssText = "display:flex; align-items:center; gap:8px; margin-bottom:10px;";
     var sitSel = el("select", "situacao-select");
@@ -1134,32 +1134,153 @@
     r.chipApres.textContent = d.apresentar || "—";
   }
 
-  // ---------- modal ----------
-  function refreshModalTags(){
-    if(!openId) return;
-    var c = cards[openId];
-    if(!c) return;
-    var active = document.activeElement;
-    if(modalDiscTags.contains(active)) return; // não interrompe quem está mexendo no seletor agora
-    modalDiscTags.innerHTML = "";
-    var discContainer = el("div", "disc-select");
-    modalDiscTags.appendChild(discContainer);
-    buildDisciplinaSelect(discContainer, c.data.disciplinas || [], function(arr){
-      var theId = openId;
-      c.data.disciplinas = arr;
-      updateDoc(theId, {disciplinas: arr});
-      refreshRow(theId);
-      flashSave(c.refs.saveDot);
-      applyFiltersAndSort();
-      autoResolveDates(theId);
+  // ---------- modal: modo visualização (somente leitura) x modo edição ----------
+  var modalMode = null; // "view" | "edit"
+
+  function dateDisplayHtml(f){
+    if(f && f.isData && f.valor) return escapeHtml(formatDatePT(f.valor));
+    if(f && f.valor) return '<span style="font-style:italic; color:var(--text-faint);">' + escapeHtml(f.valor) + "</span>";
+    return '<span style="color:var(--text-faint);">—</span>';
+  }
+  function fieldRow(label, html){
+    var wrap = el("div");
+    wrap.style.cssText = "margin-bottom:12px;";
+    var l = el("div");
+    l.style.cssText = "font:500 10px/1 var(--font-body); text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); margin-bottom:5px;";
+    l.textContent = label;
+    var v = el("div");
+    v.style.cssText = "font:400 14px/1.4 var(--font-body); color:var(--text);";
+    v.innerHTML = html;
+    wrap.appendChild(l); wrap.appendChild(v);
+    return wrap;
+  }
+  function buildViewBody(id){
+    var c = cards[id];
+    if(!c) return el("div");
+    var d = c.data;
+    var wrap = el("div");
+
+    var sitRow = el("div"); sitRow.style.cssText = "margin-bottom:14px;";
+    var sitCls = d.situacao === "concluido" ? "chip on" : d.situacao === "em_andamento" ? "chip warn" : "chip off";
+    var sitChip = el("span", sitCls); sitChip.textContent = SITUACOES[d.situacao || "nao_iniciado"];
+    sitRow.appendChild(sitChip);
+    wrap.appendChild(sitRow);
+
+    var temaOk = d.tema && d.tema.trim();
+    var temaWrap = el("div");
+    temaWrap.style.cssText = temaOk
+      ? "font:600 18px/1.35 var(--font-display); color:var(--text); margin-bottom:16px;"
+      : "font-style:italic; color:var(--text-faint); font:400 15px/1.35 var(--font-body); margin-bottom:16px;";
+    temaWrap.textContent = temaOk ? d.tema : "Tema a definir";
+    wrap.appendChild(temaWrap);
+
+    var badgesRow = el("div", "row-badges");
+    [["entregarArtigo","Artigo"],["entregarSlides","Slides"],["apresentar","Apresentação"]].forEach(function(pair){
+      var chip = el("span", "chip " + miniChipClass(d[pair[0]]));
+      chip.textContent = pair[1] + ": " + (d[pair[0]] || "—");
+      badgesRow.appendChild(chip);
     });
+    var tipoInfo = TIPOS[d.tipo] || TIPOS.avaliativo;
+    var tipoChip = el("span", "chip accentchip");
+    tipoChip.textContent = tipoInfo.label + " · " + (d.pontos != null ? d.pontos : tipoInfo.pts) + " pts";
+    badgesRow.appendChild(tipoChip);
+    wrap.appendChild(badgesRow);
+
+    var grid = el("div", "meta-grid");
+    grid.appendChild(fieldRow("Pontos recebidos", d.pontosRecebidos != null ? (d.pontosRecebidos + " pts") : '<span style="color:var(--text-faint);">Ainda não corrigido</span>'));
+    grid.appendChild(fieldRow("Responsável", d.responsavel ? escapeHtml(d.responsavel) : '<span style="color:var(--text-faint);">—</span>'));
+    grid.appendChild(fieldRow("Integrantes", (d.integrantes != null) ? String(d.integrantes) : '<span style="color:var(--text-faint);">—</span>'));
+    var prazoBadge = "";
+    if(d.prazoEntrega && d.prazoEntrega.isData && d.prazoEntrega.valor){
+      var b = daysBadge(d.prazoEntrega.valor);
+      if(b) prazoBadge = ' <span class="' + b.cls + '">' + b.txt + "</span>";
+    }
+    var prazoField = el("div", "meta-field span2");
+    prazoField.innerHTML = '<label>Prazo de entrega</label>';
+    var prazoVal = el("div"); prazoVal.style.cssText = "font:400 14px/1.4 var(--font-body); color:var(--text);";
+    prazoVal.innerHTML = dateDisplayHtml(d.prazoEntrega) + prazoBadge;
+    prazoField.appendChild(prazoVal);
+    grid.appendChild(prazoField);
+    var apresField = el("div", "meta-field span2");
+    apresField.innerHTML = '<label>Data de apresentação</label>';
+    var apresVal = el("div"); apresVal.style.cssText = "font:400 14px/1.4 var(--font-body); color:var(--text);";
+    apresVal.innerHTML = dateDisplayHtml(d.dataApresentacao);
+    apresField.appendChild(apresVal);
+    grid.appendChild(apresField);
+    wrap.appendChild(grid);
+
+    if(d.barema && d.barema.trim()) wrap.appendChild(fieldRow("Barema", escapeHtml(d.barema).replace(/\n/g, "<br>")));
+    if(d.observacoes && d.observacoes.trim()) wrap.appendChild(fieldRow("Observações", escapeHtml(d.observacoes).replace(/\n/g, "<br>")));
+
+    var footWrap = el("div");
+    footWrap.style.cssText = "margin-top:16px; padding-top:14px; border-top:1px solid var(--border); display:flex; justify-content:flex-end;";
+    var editBtn = el("button", "btn primary", {type:"button"});
+    editBtn.textContent = "✏️ Editar";
+    editBtn.addEventListener("click", function(){ openEdit(id); });
+    footWrap.appendChild(editBtn);
+    wrap.appendChild(footWrap);
+
+    return wrap;
   }
 
-  function openModal(id){
+  function renderHeaderTags(id){
+    var c = cards[id];
+    if(!c) return;
+    if(modalMode === "edit"){
+      var active = document.activeElement;
+      if(modalDiscTags.contains(active)) return; // não interrompe quem está mexendo no seletor agora
+      modalDiscTags.innerHTML = "";
+      var discContainer = el("div", "disc-select");
+      modalDiscTags.appendChild(discContainer);
+      buildDisciplinaSelect(discContainer, c.data.disciplinas || [], function(arr){
+        var theId = id;
+        c.data.disciplinas = arr;
+        updateDoc(theId, {disciplinas: arr});
+        refreshRow(theId);
+        flashSave(c.refs.saveDot);
+        applyFiltersAndSort();
+        autoResolveDates(theId);
+      });
+    } else {
+      modalDiscTags.innerHTML = "";
+      var nomes = c.data.disciplinas || [];
+      if(!nomes.length){
+        var empty = el("span", "disc-chip"); empty.textContent = "Sem disciplina"; modalDiscTags.appendChild(empty);
+      } else {
+        nomes.forEach(function(nome){
+          var chip = el("span", "disc-chip"); chip.textContent = nomeComProfessor(nome); modalDiscTags.appendChild(chip);
+        });
+      }
+    }
+  }
+  function refreshModalTags(){
+    if(!openId) return;
+    renderHeaderTags(openId);
+  }
+  function refreshModalBody(){
+    if(!openId || modalMode !== "view") return;
+    var active = document.activeElement;
+    if(modalBody.contains(active)) return;
+    modalBody.innerHTML = "";
+    modalBody.appendChild(buildViewBody(openId));
+  }
+
+  function openView(id){
     var c = cards[id];
     if(!c) return;
     openId = id;
-    refreshModalTags();
+    modalMode = "view";
+    renderHeaderTags(id);
+    modalBody.innerHTML = "";
+    modalBody.appendChild(buildViewBody(id));
+    modalOverlay.classList.add("show");
+  }
+  function openEdit(id){
+    var c = cards[id];
+    if(!c) return;
+    openId = id;
+    modalMode = "edit";
+    renderHeaderTags(id);
     modalBody.innerHTML = "";
     modalBody.appendChild(c.detailEl);
     modalOverlay.classList.add("show");
@@ -1167,6 +1288,7 @@
   function closeModal(){
     modalOverlay.classList.remove("show");
     openId = null;
+    modalMode = null;
   }
   document.getElementById("modalClose").addEventListener("click", closeModal);
   modalOverlay.addEventListener("click", function(e){ if(e.target === modalOverlay) closeModal(); });
@@ -1212,7 +1334,7 @@
     r.apresField.setValue(data.dataApresentacao || {valor:"",isData:false});
     r.apresField.setOrigem(data.dataApresentacaoOrigem);
     refreshRow(id);
-    if(openId === id) refreshModalTags();
+    if(openId === id){ refreshModalTags(); refreshModalBody(); }
     autoResolveDates(id);
   }
 
