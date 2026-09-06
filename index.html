@@ -1383,6 +1383,9 @@
     ids.sort(function(a,b){
       var da = cards[a].data, db_ = cards[b].data;
       var da0 = (da.disciplinas&&da.disciplinas[0])||"", db0=(db_.disciplinas&&db_.disciplinas[0])||"";
+      // concluído sempre por último, não importa o modo de ordenação escolhido
+      var doneA = da.situacao === "concluido", doneB = db_.situacao === "concluido";
+      if(doneA !== doneB) return doneA ? 1 : -1;
       if(sortMode === "disciplina") return da0.localeCompare(db0);
       if(sortMode === "situacao"){
         var order = {em_andamento:0, nao_iniciado:1, concluido:2};
@@ -1482,6 +1485,7 @@
 
     var upcoming = [];
     all.forEach(function(d){
+      if(d.situacao === "concluido") return; // trabalho concluído não aparece mais nos prazos próximos
       [["prazoEntrega","Entrega"],["dataApresentacao","Apresentação"]].forEach(function(pair){
         var f = d[pair[0]];
         if(f && f.isData && f.valor){
